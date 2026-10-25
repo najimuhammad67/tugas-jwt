@@ -1,0 +1,6 @@
+# Dokumentasi laporan tidak diikutkan ke repository
+dokumentasi/
+
+# File sistem
+.DS_Store
+Thumbs.db

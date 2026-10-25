@@ -1,0 +1,16 @@
+# =====================================================================
+# .htaccess  --  Routing sederhana
+# Semua alamat (mis. /mhs/3) dialihkan ke index.php supaya URL tampak bersih.
+# Syarat: mod_rewrite aktif dan AllowOverride All (XAMPP/Laragon sudah default).
+# =====================================================================
+RewriteEngine On
+
+# <-- BARU P7: Apache sering MEMBUANG header Authorization sebelum sampai ke PHP.
+# Dua baris ini menyalinnya agar token JWT terbaca.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Jika yang diminta BUKAN file asli dan BUKAN folder asli -> serahkan ke index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [L]

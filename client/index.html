@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<!--
+  index.html  --  CLIENT WEB dengan LOGIN (Pertemuan 7)
+  Alurnya:
+    1. Isi username + password, klik Login -> server membalas TOKEN JWT.
+    2. Token disimpan di variabel JavaScript.
+    3. Setiap request berikutnya membawa header:  Authorization: Bearer <token>
+  Cara pakai: buka file ini di browser. Akun latihan: admin/admin123 atau budi/budi123.
+-->
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Client API Mahasiswa + Login</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 820px; margin: 20px auto; padding: 0 12px; color: #222; }
+  h1, h2 { color: #0b2545; }  h2 { margin-top: 26px; }
+  input { padding: 7px; margin: 3px 0; }
+  button { padding: 7px 14px; background: #0b2545; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+  button.hapus { background: #c0392b; padding: 4px 10px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+  th { background: #0b2545; color: #fff; }
+  #pesan { margin: 10px 0; padding: 8px; background: #eaf4fb; border-left: 4px solid #1b7f9e; }
+  #status { padding: 8px; background: #f3f3f3; border-radius: 4px; }
+  .token { font-family: monospace; font-size: 11px; word-break: break-all; color: #555; }
+  .hint { color: #555; font-size: 13px; margin: 4px 0 0; }
+</style>
+</head>
+<body>
+
+<h1>Client API Mahasiswa</h1>
+
+<p>Alamat server:
+  <input id="alamat" size="45" value="http://localhost/api-mhs-auth/server">
+</p>
+
+<h2>1. Login</h2>
+<input id="username" placeholder="username" value="budi">
+<input id="password" type="password" placeholder="password" value="budi123">
+<button onclick="login()">Login</button>
+<button onclick="logout()">Logout</button>
+<p id="status">Belum login.</p>
+<div class="token" id="tokenTampil"></div>
+
+<div id="pesan">Silakan login terlebih dahulu.</div>
+
+<h2>2. Register (buat akun baru)</h2>
+<input id="regUsername" placeholder="username baru">
+<input id="regPassword" type="password" placeholder="password (min. 8 karakter)">
+<button onclick="register()">Daftar</button>
+<p class="hint">Akun baru otomatis mendapat role <b>user</b>.</p>
+
+<h2>3. Ganti Password (harus login)</h2>
+<input id="passLama" type="password" placeholder="password lama">
+<input id="passBaru" type="password" placeholder="password baru (min. 8 karakter)">
+<button onclick="gantiPassword()">Ganti Password</button>
+
+<h2>4. Daftar Mahasiswa (semua yang login boleh melihat)</h2>
+<button onclick="muatData()">Muat Data</button>
+<table>
+  <thead><tr><th>ID</th><th>NIM</th><th>Nama</th><th>Jurusan</th><th>Aksi</th></tr></thead>
+  <tbody id="tabel"></tbody>
+</table>
+
+<h2>5. Tambah Mahasiswa (hanya admin)</h2>
+<input id="nim" placeholder="NIM"> <input id="nama" placeholder="Nama"> <input id="jurusan" placeholder="Jurusan">
+<button onclick="tambah()">Simpan</button>
+
+<h2>6. Log API (hanya admin)</h2>
+<button onclick="muatLog()">Muat Log</button>
+<table>
+  <thead><tr><th>Waktu</th><th>User</th><th>Method</th><th>Alamat</th><th>Status</th></tr></thead>
+  <tbody id="tabelLog"></tbody>
+</table>
+
+<script>
+// ---------------------------------------------------------------
+// Token JWT disimpan di variabel ini setelah login berhasil.
+// (Variabel ini hilang jika halaman di-refresh -> harus login lagi.)
+// ---------------------------------------------------------------
+let token = null;
+
+function alamat() { return document.getElementById('alamat').value; }
+function tampilPesan(teks) { document.getElementById('pesan').textContent = teks; }
+
+// ---------------------------------------------------------------
+// kirim() : satu-satunya fungsi yang memanggil API.
+// Jika sudah login, token otomatis dipasang di header Authorization.
+// ---------------------------------------------------------------
+async function kirim(method, path, data) {
+  const header = { 'Content-Type': 'application/json' };
+  if (token) {
+    header['Authorization'] = 'Bearer ' + token;      // <-- cara membawa token
+  }
+  const respons = await fetch(alamat() + path, {
+    method: method,
+    headers: header,
+    body: data ? JSON.stringify(data) : undefined
+  });
+  const hasil = await respons.json();
+  return { status: respons.status, hasil: hasil };
+}
+
+// Penjelasan status code untuk mahasiswa
+function artiStatus(status, pesan) {
+  if (status == 401) return 'Status 401 (belum login / token tidak sah): ' + pesan;
+  if (status == 403) return 'Status 403 (sudah login, tapi TIDAK BOLEH): ' + pesan;
+  if (status == 429) return 'Status 429 (terlalu banyak request): ' + pesan;
+  return 'Status ' + status + ': ' + pesan;
+}
+
+// ---------------------------------------------------------------
+// LOGIN : kirim username + password, simpan token yang diterima
+// ---------------------------------------------------------------
+async function login() {
+  const r = await kirim('POST', '/login', {
+    username: document.getElementById('username').value,
+    password: document.getElementById('password').value
+  });
+  if (r.status == 200) {
+    token = r.hasil.token;
+    document.getElementById('status').textContent =
+      'Login sebagai ' + r.hasil.user.username + ' (role: ' + r.hasil.user.role + ')';
+    document.getElementById('tokenTampil').textContent = 'Token: ' + token;
+    tampilPesan('Login berhasil. Token tersimpan dan akan dikirim di setiap request.');
+  } else {
+    tampilPesan(artiStatus(r.status, r.hasil.pesan));
+  }
+}
+
+function logout() {
+  token = null;                                       // membuang token = logout
+  document.getElementById('status').textContent = 'Belum login.';
+  document.getElementById('tokenTampil').textContent = '';
+  tampilPesan('Anda sudah logout.');
+}
+
+// ---------------------------------------------------------------
+// REGISTER : membuat akun baru (publik, tidak perlu token)
+// Server selalu memberi role 'user'.
+// ---------------------------------------------------------------
+async function register() {
+  const username = document.getElementById('regUsername').value.trim();
+  const password = document.getElementById('regPassword').value;
+
+  const r = await kirim('POST', '/register', {
+    username: username,
+    password: password
+  });
+
+  if (r.status == 201) {
+    document.getElementById('username').value = username;   // bantu isi form login
+    document.getElementById('regPassword').value = '';
+    tampilPesan('Registrasi berhasil. Role: ' + r.hasil.user.role + '. Silakan login.');
+  } else {
+    tampilPesan(artiStatus(r.status, r.hasil.pesan));
+  }
+}
+
+// ---------------------------------------------------------------
+// GANTI PASSWORD : perlu login + password lama yang benar
+// ---------------------------------------------------------------
+async function gantiPassword() {
+  if (!token) {
+    tampilPesan('Silakan login terlebih dahulu sebelum mengganti password.');
+    return;
+  }
+
+  const r = await kirim('PUT', '/me/password', {
+    password_lama: document.getElementById('passLama').value,
+    password_baru: document.getElementById('passBaru').value
+  });
+
+  tampilPesan(artiStatus(r.status, r.hasil.pesan));
+  if (r.status == 200) {
+    document.getElementById('passLama').value = '';
+    document.getElementById('passBaru').value = '';
+  }
+}
+
+// ---------------------------------------------------------------
+// READ : ambil semua mahasiswa
+// ---------------------------------------------------------------
+async function muatData() {
+  const r = await kirim('GET', '/mhs');
+  if (r.status != 200) { tampilPesan(artiStatus(r.status, r.hasil.pesan)); return; }
+
+  let baris = '';
+  for (const m of r.hasil.data) {
+    baris += '<tr><td>' + m.id + '</td><td>' + m.nim + '</td><td>' + esc(m.name) +
+             '</td><td>' + esc(m.major) + '</td>' +
+             '<td><button class="hapus" onclick="hapus(' + m.id + ')">Hapus</button></td></tr>';
+  }
+  document.getElementById('tabel').innerHTML = baris;
+  tampilPesan('Berhasil memuat ' + r.hasil.data.length + ' data.');
+}
+
+// ---------------------------------------------------------------
+// CREATE : tambah (server akan menolak 403 jika bukan admin)
+// ---------------------------------------------------------------
+async function tambah() {
+  const r = await kirim('POST', '/mhs', {
+    nim: document.getElementById('nim').value,
+    name: document.getElementById('nama').value,
+    major: document.getElementById('jurusan').value
+  });
+  tampilPesan(artiStatus(r.status, r.hasil.pesan));
+  if (r.status == 201) muatData();
+}
+
+// ---------------------------------------------------------------
+// DELETE : hapus (server akan menolak 403 jika bukan admin)
+// ---------------------------------------------------------------
+async function hapus(id) {
+  if (!confirm('Hapus data ini?')) return;
+  const r = await kirim('DELETE', '/mhs/' + id);
+  tampilPesan(artiStatus(r.status, r.hasil.pesan));
+  if (r.status == 200) muatData();
+}
+
+// ---------------------------------------------------------------
+// LOG : hanya admin
+// ---------------------------------------------------------------
+async function muatLog() {
+  const r = await kirim('GET', '/log');
+  if (r.status != 200) { tampilPesan(artiStatus(r.status, r.hasil.pesan)); return; }
+
+  let baris = '';
+  for (const l of r.hasil.data) {
+    baris += '<tr><td>' + l.waktu + '</td><td>' + esc(l.username || '-') + '</td><td>' + l.method +
+             '</td><td>' + esc(l.path) + '</td><td>' + l.status + '</td></tr>';
+  }
+  document.getElementById('tabelLog').innerHTML = baris;
+  tampilPesan('Log dimuat.');
+}
+
+// Mengubah karakter < > & agar teks dari database tidak dijalankan sebagai HTML.
+function esc(teks) {
+  return String(teks).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---------------------------------------------------------------
+// Alamat server otomatis:
+// - jika UI dibuka lewat file:// atau php -S di port pengembangan
+//   (mis. 8080/8081), API biasanya berjalan di php -S localhost:8000;
+// - jika dibuka lewat XAMPP (port 80), tetap pakai alamat XAMPP.
+// ---------------------------------------------------------------
+(function aturAlamatDefault() {
+  const alamatXampp = 'http://localhost/api-mhs-auth/server';
+  const input = document.getElementById('alamat');
+  const hostLokal = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+  const viaServerPengembangan = location.protocol === 'file:'
+    || (hostLokal && location.port !== '' && location.port !== '80');
+  if (viaServerPengembangan && input.value === alamatXampp) {
+    input.value = 'http://localhost:8000';
+  }
+})();
+</script>
+</body>
+</html>
